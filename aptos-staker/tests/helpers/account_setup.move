@@ -25,11 +25,7 @@ module publisher::account_setup {
     friend publisher::total_staked_test;
     friend publisher::getter_test;
     friend publisher::residual_rewards_test;
-    friend publisher::allocate_test;
-    friend publisher::distribute_rewards_test;
-    friend publisher::deallocate_test;
     friend publisher::fees_test;
-    friend publisher::total_allocated_test;
     friend publisher::withdraw_list_test;
 
     // ________________ Account-related helper functions  ________________

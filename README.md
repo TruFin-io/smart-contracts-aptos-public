@@ -29,6 +29,11 @@ Initialise a new Aptos move package by creating a new directory `mkdir new-move-
 
 `aptos move init --name ${new-move-package-name}`
 
+**Deployment Profiles**
+
+Configuring a new signer: You can run `aptos init` in any folder and create separate configurations. Look at the account you created with the `aptos account list` command. This tool allows for multiple profiles within the same repository.
+Specify a profile name using `aptos init --profile trufin`
+
 ## Compiling a project
 
 
@@ -73,3 +78,59 @@ Inside aptos-staker run:
 This will create the file `.coverage_map.mvcov` that is used to show gaps in test coverage running:
 `aptos move coverage source --dev --module staker`
 
+## Publishing the Whitelist
+
+Once the package has been compiled and tested, it can be published (deployed) using your aptos account. (Make sure you have run aptos init and have an aptos account)
+
+Change the whitelist address in the `Move.toml` file to match your aptos account address.
+
+You can then run the following commands in your terminal:
+ First, give permission to execute the script:
+ `chmod +x deploy_whitelist.sh`
+
+ Then, run the script, passing in 
+ 1. Your aptos account name as ACCOUNT_NAME.
+ 2. Pass in true as DEV, if this is to publish to devnet or testnet, otherwise false.
+ 
+`./deploy_staker.sh default true` 
+
+## Publishing the Staker
+
+
+The staker imports the whitelist. Thus, please publish the whitelist before publishing the staker. Once the package has been compiled and tested, it can be published (deployed) using a resource account.
+
+You can run the following commands in your terminal:
+ First, give permission to execute the script:
+ `chmod +x deploy_staker.sh`
+
+ Then, run the script, passing in 
+ 1. Your aptos account name as ACCOUNT_NAME.
+ 2. A random seed from which to create a resource account as SEED i.e. 1234. 
+ 3. The address for the contract admin as ADMIN_ADDRESS.
+ 4. Optional boolean flag DEV. Default is `DEV=true`, if not provided. DEV should be true to publish to devnet and testnet, otherwise false.
+ 
+ Ensure that the publisher address in your move.toml is set to "_".
+ 
+`./deploy_staker.sh src 1234 80648ee2984d56281778aaa996005ac45ea5fbd71208f33ed9fa7f9a33c13f6f` 
+
+## Upgrading the Staker
+
+The published `aptos-staker` package can be upgraded via the `upgrade_staker.sh` script, which deploys new versions of the TruAPT and Staker modules.
+
+The script performs the following steps:
+1. Uses the `move build-publish-payload` command to generate metatada and bytecode for the modules in this package.
+2. Creates a move script to deploy the new bytecode under a given resource account.
+3. The move script is then compiled with the command `aptos move compile-script`.
+4. And executed with the command `aptos move run-script`
+
+To run the script, make it executable running `chmod +x upgrade_staker.sh`, and make sure to have the `publisher`, `default_admin` and `src_account` profiles in your `.aptos/config.yaml` for the network you are deploying to.
+
+Usage:
+```
+./upgrade_staker.sh [testnet | mainnet] <upgrade>
+```
+
+For example to upgrade the testnet staker:
+```
+./upgrade_staker.sh testnet upgrade
+```

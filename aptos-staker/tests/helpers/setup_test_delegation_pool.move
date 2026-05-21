@@ -22,9 +22,6 @@ module publisher::setup_test_delegation_pool {
     friend publisher::getter_test;
     friend publisher::setup_test_staker;
     friend publisher::residual_rewards_test;
-    friend publisher::allocate_test;
-    friend publisher::distribute_rewards_test;
-    friend publisher::deallocate_test;
     friend publisher::fees_test;
     friend publisher::withdraw_list_test;
 

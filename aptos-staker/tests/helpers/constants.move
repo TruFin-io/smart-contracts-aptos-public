@@ -15,11 +15,7 @@ module publisher::constants {
     friend publisher::setup_test_staker;
     friend publisher::setup_test_delegation_pool;
     friend publisher::time;
-    friend publisher::allocate_test;
-    friend publisher::distribute_rewards_test;
-    friend publisher::deallocate_test;
     friend publisher::fees_test;
-    friend publisher::total_allocated_test;
     friend publisher::withdraw_list_test;
 
     const ONE_APT: u64 = 100000000;

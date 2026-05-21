@@ -103,51 +103,6 @@ module publisher::setter_test{
     }
 
     #[test(admin=@default_admin, resource_account=@publisher, src=@src_account)]    
-    public entry fun test_set_dist_fee(
-        admin: &signer,
-        resource_account: &signer,
-        src: &signer
-    ) {
-        // initialise staker
-        setup_test_staker::setup(admin, resource_account, src);
-            
-        // set fee
-        staker::set_dist_fee(admin, 700);
-
-        let (_, _, _, distribution_fee, _, _, _, _) = staker_info();
-        assert!(distribution_fee == 700, 0);
-    }
-
-    #[test(admin=@default_admin, resource_account=@publisher, src=@src_account)]    
-    #[expected_failure(abort_code=327684, location=staker)]
-    public entry fun test_set_dist_fee_not_called_by_admin_fails(
-        admin: &signer,
-        resource_account: &signer,
-        src: &signer
-    ) {
-        setup_test_staker::setup(admin, resource_account, src);
-
-        // set fee
-        staker::set_dist_fee(src, 10);
-    }
-    
-    #[test(admin=@default_admin, resource_account=@publisher, src=@src_account)]    
-    #[expected_failure(abort_code=65541, location=staker)]
-    public entry fun test_set_dist_fee_with_fee_too_large_fails(
-        admin: &signer,
-        resource_account: &signer,
-        src: &signer
-    ) {
-       
-        setup_test_staker::setup(admin, resource_account, src);
-
-        let max_dist_fees = test_fee_precision();
-
-        // fails with EFEE_TOO_LARGE
-        staker::set_dist_fee(admin, max_dist_fees);
-    }
-
-    #[test(admin=@default_admin, resource_account=@publisher, src=@src_account)]
     public entry fun test_set_new_admin(
         admin: &signer,
         resource_account: &signer,
@@ -644,31 +599,7 @@ module publisher::setter_test{
         assert!(event::was_event_emitted(&expected_event), 0);
     } 
 
-    #[test(admin=@default_admin, resource_account=@publisher, 
-    src=@src_account)]
-    public entry fun test_SetDistFeeEvent_emitted(
-        admin: &signer,
-        resource_account: &signer,
-        src: &signer,
-    ) { 
-        // initialise staker
-        setup_test_staker::setup(admin, resource_account, src);
-        let new_dist_fee = 888;
-
-        // action emits event
-        staker::set_dist_fee(admin, new_dist_fee);
-
-        // assert number of emitted events
-        let set_dist_fee_events = event::emitted_events<staker::SetDistFeeEvent>();
-        assert!(vector::length(&set_dist_fee_events) == 1, 0);
-
-        // assert event contents
-        let expected_event = staker::test_SetDistFeeEvent(constants::default_dist_fee(), new_dist_fee);
-        assert!(event::was_event_emitted(&expected_event), 0);
-    } 
-
-
-    #[test(admin=@default_admin, resource_account=@publisher, 
+    #[test(admin=@default_admin, resource_account=@publisher,
     src=@src_account)]
     public entry fun test_SetMinDepositEvent_emitted(
         admin: &signer,
