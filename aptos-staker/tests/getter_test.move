@@ -6,7 +6,7 @@ module publisher::getter_test{
     use aptos_framework::delegation_pool; 
 
     // smart contracts
-    use publisher::staker::{Self, test_AllocationInfo, test_DelegationPoolInfo, pools, default_pool, stake_to_specific_pool, add_pool, disable_pool};
+    use publisher::staker::{Self, test_DelegationPoolInfo, pools, default_pool, stake_to_specific_pool, add_pool, disable_pool};
 
     // test modules
     use publisher::constants;
@@ -318,74 +318,6 @@ module publisher::getter_test{
         assert!(vector::contains(&all_pools, &expected_pool_two_info), 0);
     }
 
-// -------------------------------- Get Allocations() Info ------------------------------------------
-    #[test(alice=@0xE0A1, bob=@0xABC123, chloe=@0xDEF123, admin=@default_admin, aptos_framework=@0x1, resource_account=@publisher, 
-    src=@src_account, validator=@0xDEA3, whitelist=@whitelist)]
-    public entry fun test_allocations_gets_user_allocations(
-        alice: &signer,
-        bob: &signer,
-        chloe: &signer,
-        admin: &signer,
-        aptos_framework: &signer,
-        resource_account: &signer,
-        src: &signer,
-        validator: &signer,
-        whitelist: &signer
-    ) {
-        // initialise staker and delegation pool
-        setup_test_staker::setup_with_delegation_pool(aptos_framework, admin, resource_account, src, validator);
-
-        // whitelist and setup user with APT
-        let deposit_amount = 1_000 * constants::one_apt();
-        account_setup::setup_account_and_mint_APT(aptos_framework, alice, deposit_amount);
-        account_setup::setup_whitelist(whitelist, vector<address>[signer::address_of(alice)]);
-
-        // transfer and stake APT
-        staker::stake(alice, deposit_amount);
-
-        let allocate_amount: u64 = 1* constants::one_apt(); 
-        staker::allocate(alice, signer::address_of(bob), allocate_amount);
-        staker::allocate(alice, signer::address_of(chloe), allocate_amount);
-
-        // get allocations
-        let allocations = staker::allocations(signer::address_of(alice));
-
-        let share_price_num: u256 = 100000000000000000000000;
-        let share_price_denom: u256 = 1000000000000000;
-        let expected_allocation_one_info = test_AllocationInfo(signer::address_of(bob), allocate_amount, share_price_num, share_price_denom);
-        assert!(vector::contains(&allocations, &expected_allocation_one_info), 0);
-
-        let expected_allocation_two_info = test_AllocationInfo(signer::address_of(chloe), allocate_amount, share_price_num, share_price_denom);
-        assert!(vector::contains(&allocations, &expected_allocation_two_info), 0);
-    }
-
-    #[test(alice=@0xE0A1, bob=@0xABC123, chloe=@0xDEF123, admin=@default_admin, aptos_framework=@0x1, resource_account=@publisher, 
-    src=@src_account, validator=@0xDEA3, whitelist=@whitelist)]
-    #[expected_failure(abort_code=65558, location=staker)]
-    public entry fun test_allocations_returns_no_allocations_error(
-        alice: &signer,
-        admin: &signer,
-        aptos_framework: &signer,
-        resource_account: &signer,
-        src: &signer,
-        validator: &signer,
-        whitelist: &signer
-    ) {
-        // initialise staker and delegation pool
-        setup_test_staker::setup_with_delegation_pool(aptos_framework, admin, resource_account, src, validator);
-
-        // whitelist and setup user with APT
-        let deposit_amount = 1_000 * constants::one_apt();
-        account_setup::setup_account_and_mint_APT(aptos_framework, alice, deposit_amount);
-        account_setup::setup_whitelist(whitelist, vector<address>[signer::address_of(alice)]);
-
-        // transfer and stake APT
-        staker::stake(alice, deposit_amount);
-
-        // get allocations
-        staker::allocations(signer::address_of(alice));
-    }
-    
 // -------------------------------- Get whitelist address ------------------------------------------
     #[test(alice=@0xE0A1, admin=@default_admin, aptos_framework=@0x1, resource_account=@publisher, 
     src=@src_account, validator=@0xDEA3, whitelist=@whitelist)]

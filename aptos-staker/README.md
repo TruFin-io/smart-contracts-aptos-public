@@ -2,21 +2,9 @@
 
 The TruFin Aptos staking vault offers users a reliable way of staking APT on the Aptos network.  
 On staking APT via the vault, users receive a receipt in the form of the **rewards bearing TruAPT token**.  
-In addition to the liquid staking functionality, the TruFin staker supports delegating to different pools as well as the allocation of rewards to different parties.  
-We briefly present these 2 features as well as share some notes that explain the rationale for some of our decisions.
+In addition to the liquid staking functionality, the TruFin staker supports delegating to different pools.
 
-## Allocations
-
-Each user (then called the *distributor*) can opt to send some or all of the rewards from staking APT to another user or wallet address (the *recipient*).  
-This additional functionality of allocating staking rewards to a third party can be described by three core functions within our smart contract architecture:
-
-- `allocate` adds an amount of APT, distributor, recipient and the current share price to the list of allocations.
-- `deallocate` removes part or the entire amount allocated to a recipient from the distributors allocations list. It reduces the distributor's total allocated amount.
-- `distribute_rewards` and `distribute_all` are used to distribute the rewards from an allocation to the corresponding recipients. The distribution can be made in APT or TruAPT and comes out of the distributor's wallet.
-
-**Notes:**
-The distributor doesn't need to have funds for rewards available at all times in their wallet. The allocation feature keeps track of allocations made but doesn't enforce distribution or solvency.  
-Similarly, the distributor can allocate more than their actual balance (e.g. by allocating max balance multiple times).
+> Note: Allocations feature is deprecated.
 
 ## Multi-delegation pools support
 

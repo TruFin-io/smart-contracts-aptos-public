@@ -18,7 +18,6 @@ module publisher::staker{
     use aptos_framework::event;
     use aptos_framework::object;
     use aptos_framework::reconfiguration::current_epoch;
-    use aptos_framework::primary_fungible_store;
 
     use aptos_std::smart_table::{Self, SmartTable};
 
@@ -68,12 +67,12 @@ module publisher::staker{
     const EPOOL_AT_MAX_CAPACITY: u64 = 18;
     const EBELOW_MIN_STAKE: u64 = 19;
     const EUNLOCK_AMOUNT_TOO_HIGH: u64 = 20;
-    const EALLOCATION_UNDER_ONE_APT: u64 = 21;
-    const ENO_ALLOCATIONS: u64 = 22;
-    const EINVALID_RECIPIENT: u64 = 23;
+    const EDEPRECATED_ALLOCATION_UNDER_ONE_APT: u64 = 21;
+    const EDEPRECATED_NO_ALLOCATIONS: u64 = 22;
+    const EDEPRECATED_INVALID_RECIPIENT: u64 = 23;
     const EINVALID_UNSTAKED_AMOUNT: u64 = 24;
-    const ENO_ALLOCATION_TO_RECIPIENT: u64 = 25;
-    const EEXCESS_DEALLOCATION: u64 = 26;
+    const EDEPRECATED_NO_ALLOCATION_TO_RECIPIENT: u64 = 25;
+    const EDEPRECATED_EXCESS_DEALLOCATION: u64 = 26;
     const EVALIDATOR_NOT_ACTIVE: u64 = 27;
     const ECONTRACT_PAUSED: u64 = 28;
     const EALREADY_PAUSED: u64 = 29;
@@ -81,6 +80,7 @@ module publisher::staker{
     const ENO_PENDING_ADMIN: u64 = 31;
     const ENOT_PENDING_ADMIN: u64 = 32;
     const ENO_NONCES_PROVIDED: u64 = 33;
+    const EDEPRECATED: u64 = 34;
 
     // *** STRUCTS ***
 
@@ -96,7 +96,7 @@ module publisher::staker{
         name: String, // staker name
         treasury: address, // treasury address
         fee: u64, // treasury fee
-        dist_fee: u64, // treasury distribution fee charged upon dist
+        dist_fee: u64, // DEPRECATED in v0.0.2
         min_deposit: u64, // minimum APT amount a user must deposit
         truAPT_coin: object::Object<Metadata>, // TruApt token metadata
         tax_exempt_stake: u64, // total amount of APT staked in the staker for which no fees are charged
@@ -124,19 +124,19 @@ module publisher::staker{
         stake: u64,
     }
 
-    /// @notice Struct to store all allocations by user.
+    /// DEPRECATED in v0.0.2.
     struct Allocations has key {
         allocations: SmartTable<address, Allocation>,
     }
 
-    /// @notice Struct for storing allocation information.
+    /// DEPRECATED in v0.0.2.
     struct Allocation has drop, store, copy {
         apt_amount: u64,
         share_price_num: u256,
         share_price_denom: u256,
     }
 
-    /// @notice Struct for returning stored allocation information to the user.
+    /// DEPRECATED in v0.0.2.
     struct AllocationInfo has drop {
         recipient: address,
         apt_amount: u64,
@@ -144,7 +144,7 @@ module publisher::staker{
         share_price_denom: u256,
     }
 
-    /// @notice Struct for returning distribution information.
+    /// DEPRECATED in v0.0.2.
     struct DistributionInfo has drop {
         user: address,
         recipient: address,
@@ -193,7 +193,7 @@ module publisher::staker{
         treasury: address,
         delegation_pool: address,
         fee: u64,
-        dist_fee: u64,
+        dist_fee: u64, // DEPRECATED in v0.0.2
         min_deposit_amount: u64,
         admin: address,
     }
@@ -215,9 +215,7 @@ module publisher::staker{
     }
 
     #[event]
-    /// @notice Emitted when distribution fee is set.
-    /// @param Old treasury distribution fee.
-    /// @param New treasury distribution fee.
+    /// DEPRECATED in v0.0.2.
     struct SetDistFeeEvent has drop, store {
         old_dist_fee: u64,
         new_dist_fee: u64
@@ -319,16 +317,7 @@ module publisher::staker{
     }
 
     #[event]
-    /// @notice Emitted when a user makes an allocation.
-    /// @param Address of the user making the allocation.
-    /// @param Address of the recipient.
-    /// @param Amount of new APT allocated.
-    /// @param Total cumulative amount of APT allocated to the recipient by the user.
-    /// @param Share price numerator.
-    /// @param Share price denominator.
-    /// @param Total cumulative amount of APT allocated by the user across all existing allocations.
-    /// @param Average allocation TruAPT share price numerator.
-    /// @param Average allocation TruAPT share price denominator.
+    /// DEPRECATED in v0.0.2.
     struct AllocatedEvent has drop, store {
         user: address,
         recipient: address,
@@ -342,21 +331,7 @@ module publisher::staker{
     }
    
     #[event]
-    /// @notice Emitted when a user distributes rewards.
-    /// @param Address of the user.
-    /// @param Address of the recipient.
-    /// @param Reward amount in TruAPT shares.
-    /// @param Reward amount in APT.
-    /// @param User's TruAPT balance.
-    /// @param Recipient's TruAPT balance.
-    /// @param Fees paid to treasury in TruAPT.
-    /// @param Treasury's TruAPT balance.
-    /// @param Share price numerator.
-    /// @param Share price denominator.
-    /// @param Whether the distribution was in APT (true) or TruAPT (false).
-    /// @param Total amount of APT allocated by the user across all existing allocations.
-    /// @param Average allocation TruAPT share price numerator.
-    /// @param Average allocation TruAPT share price denominator.
+    /// DEPRECATED in v0.0.2.
     struct DistributedRewardsEvent has drop, store {
         user: address,
         recipient: address,
@@ -375,23 +350,13 @@ module publisher::staker{
     }
 
     #[event]
-    /// @notice Emitted when a user distributes rewards to all their recipients.
-    /// @param Address of the user distributing.
+    /// DEPRECATED in v0.0.2.
     struct DistributedAllEvent has drop, store {
         user: address
     }
 
     #[event]
-    /// @notice Emitted on deallocations.
-    /// @param Address of the user making the deallocation.
-    /// @param Address of the user from whom some assets were deallocated.
-    /// @param Amount of APT deallocated.
-    /// @param Total amount of APT remaining allocated to the recipient.
-    /// @param Share price numerator.
-    /// @param Share price denominator.
-    /// @param Total amount of APT currently allocated by the deallocator.
-    /// @param Average allocation TruAPT share price numerator.
-    /// @param Average allocation TruAPT share price denominator.
+    /// DEPRECATED in v0.0.2.
     struct DeallocatedEvent has drop, store {
         user: address,
         recipient: address,
@@ -472,7 +437,7 @@ module publisher::staker{
     /// @return Staker name.
     /// @return Treasury address. 
     /// @return Treasury fee.
-    /// @return Distribution fee.
+    /// @return DEPRECATED `dist_fee` slot.
     /// @return Minimum deposit amount in APT. 
     /// @return Admin address.
     /// @return TruAPT coin metadata.
@@ -525,44 +490,9 @@ module publisher::staker{
     }
 
     #[view]
-    /// @notice Returns the total amount of APT currently allocated by a distributor and the
-    /// average share price fraction at which it was allocated.
-    /// @param Address of the distributor whose total allocated amount is to be checked.
-    /// @return Total amount of APT allocated across all existing distributor allocations.
-    /// @return Average allocation TruAPT share price numerator.
-    /// @return Average allocation TruAPT share price denominator.
-    public fun total_allocated(user: address): (u64, u256, u256) acquires Allocations {
-        if (!exists<Allocations>(user)) {
-            return (0,0,0)
-        };
-        let user_allocations = borrow_global<Allocations>(user);
-
-        let total_allocated_amount: u256 = 0;
-        let allocated_share_price_num: u256 = 0;
-        let allocated_share_price_denom: u256 = 0;
-
-         smart_table::for_each_ref(&user_allocations.allocations, |_recipient, _allocation| {
-            let allocation: &Allocation = _allocation;
-
-            // this can only be true for the first iteration
-            if (total_allocated_amount == 0) {
-                allocated_share_price_num = allocation.share_price_num;
-                allocated_share_price_denom = allocation.share_price_denom;
-            };
-
-            // update total allocation share price denominator
-            let share_price_denom_summand1 = total_allocated_amount * SHARE_PRICE_SCALING_FACTOR * allocated_share_price_denom / allocated_share_price_num;
-            let share_price_denom_summand2 = (allocation.apt_amount as u256) * SHARE_PRICE_SCALING_FACTOR * allocation.share_price_denom / allocation.share_price_num;
-            allocated_share_price_denom = share_price_denom_summand1 + share_price_denom_summand2;
-            
-            // update total allocation share price numerator
-            allocated_share_price_num = (total_allocated_amount as u256) * SHARE_PRICE_SCALING_FACTOR + (allocation.apt_amount as u256) * SHARE_PRICE_SCALING_FACTOR;
-            
-            // update total allocation APT amount
-            total_allocated_amount = total_allocated_amount + (allocation.apt_amount as u256);
-        });
-
-        return ((total_allocated_amount as u64), allocated_share_price_num, allocated_share_price_denom)
+    /// DEPRECATED in v0.0.2.
+    public fun total_allocated(_user: address): (u64, u256, u256) {
+        abort error::invalid_state(EDEPRECATED)
     }
 
     #[view]
@@ -654,25 +584,9 @@ module publisher::staker{
     }
 
     #[view]
-    /// @notice Gets all allocations made by a specific user.
-    /// @param Address of the user under consideration.
-    /// @return Vector of individual allocation information.
-    public fun allocations(user: address): vector<AllocationInfo> acquires Allocations {
-        assert!(exists<Allocations>(user), error::invalid_argument(ENO_ALLOCATIONS));
-        let user_allocations = borrow_global<Allocations>(user);
-        let allocation_infos = vector::empty<AllocationInfo>();
-
-        smart_table::for_each_ref(&user_allocations.allocations, |_recipient, _allocation| {
-            let allocation: &Allocation = _allocation;
-            let allocation_info = AllocationInfo {
-                    recipient: *_recipient,
-                    apt_amount: allocation.apt_amount,
-                    share_price_num: allocation.share_price_num,
-                    share_price_denom: allocation.share_price_denom
-                };
-                vector::push_back(&mut allocation_infos, allocation_info);
-        });
-        return (allocation_infos)
+    /// DEPRECATED in v0.0.2.
+    public fun allocations(_user: address): vector<AllocationInfo> {
+        abort error::invalid_state(EDEPRECATED)
     }
 
     #[view]
@@ -772,7 +686,7 @@ module publisher::staker{
     /// @param Address of the treasury. 
     /// @param Address of the default delegation pool we are staking to. 
     /// @param Treasury staking fee amount. 
-    /// @param Treasury fee payable upon distribution.
+    /// @param DEPRECATED `_dist_fee_deprecated` slot
     /// @param Minimum deposit amount in APT that a user has to deposit.
     public entry fun initialize(
         admin: &signer,
@@ -780,7 +694,7 @@ module publisher::staker{
         treasury: address,
         default_delegation_pool: address,
         fee: u64,
-        dist_fee: u64,
+        _dist_fee_deprecated: u64,
         min_deposit: u64,
     ) acquires Settings {
         check_admin(admin);
@@ -788,7 +702,7 @@ module publisher::staker{
         assert!(string::length(&name) < 128, error::invalid_argument(ESTRING_TOO_LONG));
         assert!(treasury != @0x0, error::invalid_argument(EZERO_ADDRESS));
         assert!(fee < FEE_PRECISION, error::invalid_argument(EFEE_TOO_LARGE));
-        assert!(dist_fee < FEE_PRECISION, error::invalid_argument(EFEE_TOO_LARGE));
+        assert!(_dist_fee_deprecated < FEE_PRECISION, error::invalid_argument(EFEE_TOO_LARGE));
         assert!(min_deposit >= MIN_COINS_ON_SHARES_POOL, error::invalid_argument(EBELOW_MIN_STAKE));
         assert!(delegation_pool::delegation_pool_exists(default_delegation_pool), error::invalid_argument(EINVALID_POOL_ADDRESS));
         assert!(stake::get_validator_state(default_delegation_pool) == VALIDATOR_STATUS_ACTIVE, error::invalid_state(EVALIDATOR_NOT_ACTIVE));
@@ -811,7 +725,7 @@ module publisher::staker{
                 name: name,
                 treasury: treasury,
                 fee: fee,
-                dist_fee: dist_fee,
+                dist_fee: _dist_fee_deprecated,
                 min_deposit: min_deposit,
                 truAPT_coin: truAPT_coin,
                 tax_exempt_stake: 0,
@@ -853,7 +767,7 @@ module publisher::staker{
             treasury: treasury,
             delegation_pool: default_delegation_pool,
             fee: fee,
-            dist_fee: dist_fee,
+            dist_fee: _dist_fee_deprecated,
             min_deposit_amount: min_deposit,
             admin: signer::address_of(admin),
         };
@@ -933,25 +847,9 @@ module publisher::staker{
         staker_mut.fee = new_fee;
     }
 
-    /// @notice Sets the distributon fee.
-    /// @param Admin that wants to alter the distribution fee amount.
-    /// @param New distribution fee of staker vault.
-    public entry fun set_dist_fee(admin: &signer, new_dist_fee: u64) acquires StakerInfo, Settings {
-        check_admin(admin);
-        assert!(new_dist_fee < FEE_PRECISION, error::invalid_argument(EFEE_TOO_LARGE));
-
-        let staker_mut = borrow_global_mut<StakerInfo>(RESOURCE_ACCOUNT);
-
-        let event = SetDistFeeEvent {
-            old_dist_fee: staker_mut.dist_fee,
-            new_dist_fee: new_dist_fee,
-        };
-
-        // emit event
-        event::emit<SetDistFeeEvent>(event);
-
-        // update
-        staker_mut.dist_fee = new_dist_fee;
+    /// DEPRECATED in v0.0.2.
+    public entry fun set_dist_fee(_admin: &signer, _new_dist_fee: u64) {
+        abort error::invalid_state(EDEPRECATED)
     }
     
     /// @notice Sets the minimum APT deposit amount a user must deposit.
@@ -1257,225 +1155,24 @@ module publisher::staker{
         internal_stake(user, amount, delegation_pool);
     }
 
-    /// @notice Allocate staking rewards to another user.
-    /// @param Allocator wanting to allocate rewards to another user.
-    /// @param Address of the recipient of the allocated rewards.
-    /// @param APT amount to be allocated to other user.
-    public entry fun allocate(allocator: &signer, recipient: address, amount: u64) acquires Allocations, DelegationPools, StakerInfo, Settings {
-        check_not_paused();        
-        check_whitelist(allocator);
-        let allocator_addr = signer::address_of(allocator);
-        assert!(recipient != allocator_addr, error::invalid_argument(EINVALID_RECIPIENT));
-        assert!(recipient != @0x0, error::invalid_argument(EINVALID_RECIPIENT));
-        assert!(amount >= ONE_APT, error::invalid_argument(EALLOCATION_UNDER_ONE_APT));
-        assert!(amount <= max_withdraw(allocator_addr), error::invalid_argument(EINSUFFICIENT_BALANCE));
-        
-        if(!exists<Allocations>(allocator_addr)) {
-            // if allocations table does not exist, create it
-            move_to(allocator, Allocations { allocations: smart_table::new() });
-        };
-
-        let user_allocations_mut = borrow_global_mut<Allocations>(allocator_addr);
-        let (global_share_price_num, global_share_price_denom) = share_price();
-
-        let allocation;
-
-        if (smart_table::contains(&mut user_allocations_mut.allocations, recipient)) {
-            // update existing user->recipient allocation
-            allocation = smart_table::borrow_mut(&mut user_allocations_mut.allocations, recipient);
-
-            allocation.share_price_denom =
-                            ((allocation.apt_amount as u256) * SHARE_PRICE_SCALING_FACTOR * allocation.share_price_denom / allocation.share_price_num) +  
-                            ((amount as u256) * SHARE_PRICE_SCALING_FACTOR * global_share_price_denom / global_share_price_num);
-            allocation.share_price_num = (allocation.apt_amount as u256) * SHARE_PRICE_SCALING_FACTOR + (amount as u256) * SHARE_PRICE_SCALING_FACTOR;
-            allocation.apt_amount = allocation.apt_amount + amount;
-        } else {
-            // create new user->recipient allocation
-            allocation = smart_table::borrow_mut_with_default(&mut user_allocations_mut.allocations, recipient, 
-            Allocation { apt_amount: amount, share_price_num: global_share_price_num, share_price_denom: global_share_price_denom })
-        };
-
-        let allocation = *allocation;
-        // get total allocated amount after allocation
-        let (total_allocated_amount, total_allocated_share_price_num, total_allocated_share_price_denom) = total_allocated(allocator_addr);
-
-        // event emission
-        let event = AllocatedEvent {
-            user: allocator_addr,
-            recipient: recipient,
-            amount: amount,
-            total_amount: allocation.apt_amount,
-            share_price_num: allocation.share_price_num,
-            share_price_denom: allocation.share_price_denom,
-            total_allocated_amount: total_allocated_amount,
-            total_allocated_share_price_num: total_allocated_share_price_num,
-            total_allocated_share_price_denom: total_allocated_share_price_denom
-        };
-        // emit event
-        event::emit<AllocatedEvent>(event);
+    /// DEPRECATED in v0.0.2.
+    public entry fun allocate(_allocator: &signer, _recipient: address, _amount: u64) {
+        abort error::invalid_state(EDEPRECATED)
     }
 
-    /// @notice Distribute allocation rewards from the caller to the specified recipient.
-    /// @param Distributor wanting to distribute the rewards.
-    /// @param Address of the allocation's recipient.
-    /// @param Boolean indicating whether rewards should be distributed in APT (true) or in TruAPT (false).
-    /// @dev If distribution is in APT, the APT will be transferred straight from the distributor's wallet.
-    public entry fun distribute_rewards(distributor: &signer, recipient: address, in_APT: bool) acquires DelegationPools, Allocations, StakerInfo, Settings {
-        check_not_paused();
-        check_whitelist(distributor);
-
-        // get allocations for the user
-        let distributor_addr = signer::address_of(distributor); 
-        assert!(exists<Allocations>(distributor_addr), error::invalid_argument(ENO_ALLOCATIONS));
-        let user_allocations_mut = borrow_global_mut<Allocations>(distributor_addr);
-        
-        // get allocation to the recipient
-        assert!(smart_table::contains(&mut user_allocations_mut.allocations, recipient), error::invalid_argument(ENO_ALLOCATION_TO_RECIPIENT));
-        let allocation = smart_table::borrow_mut(&mut user_allocations_mut.allocations, recipient);
-
-        let (global_share_price_num, global_share_price_denom) = share_price();
-
-        let distribution = internal_distribute(distributor, recipient, allocation, in_APT, global_share_price_num, global_share_price_denom);
-        
-        // return if no rewards to distribute
-        if (distribution.apt_amount == 0) {
-            return
-        };
-
-        let (total_allocated_amount, total_allocated_share_price_num, total_allocated_share_price_denom) = total_allocated(distributor_addr);
-
-        let event = DistributedRewardsEvent {
-            user: distribution.user,
-            recipient: distribution.recipient,
-            user_balance: distribution.user_balance,
-            recipient_balance: distribution.recipient_balance,
-            fees: distribution.fees,
-            treasury_balance: distribution.treasury_balance,
-            shares: distribution.shares,
-            apt_amount: distribution.apt_amount,
-            in_apt: in_APT,
-            share_price_num: distribution.share_price_num,
-            share_price_denom: distribution.share_price_denom,
-            total_allocated_amount: total_allocated_amount,
-            total_allocated_share_price_num: total_allocated_share_price_num,
-            total_allocated_share_price_denom: total_allocated_share_price_denom
-        };
-        // emit event
-        event::emit<DistributedRewardsEvent>(event);
+    /// DEPRECATED in v0.0.2.
+    public entry fun distribute_rewards(_distributor: &signer, _recipient: address, _in_APT: bool) {
+        abort error::invalid_state(EDEPRECATED)
     }
 
-    /// @notice Distributes the rewards from the caller's allocations to all their recipients.
-    /// @param Distributor that wants to distribute all their rewards.
-    /// @param Boolean indicating whether rewards are distributed in APT (true) or in TruAPT (false).
-    /// @dev If in_APT is set to true, the APT will be transferred straight from the distributor's wallet.
-    /// Their TruAPT balance will not be altered.
-    public entry fun distribute_all(distributor: &signer, in_APT: bool) acquires DelegationPools, Allocations, StakerInfo, Settings {
-        check_not_paused();
-        check_whitelist(distributor);
-
-        let distributor_addr = signer::address_of(distributor);
-
-        assert!(exists<Allocations>(distributor_addr), error::invalid_argument(ENO_ALLOCATIONS));
-        let (total_allocated_amount, _, _) = total_allocated(distributor_addr);
-
-        let user_allocations_mut = borrow_global_mut<Allocations>(distributor_addr);
-
-        // get allocations for the user
-        assert!(smart_table::length(&mut user_allocations_mut.allocations) != 0, error::invalid_argument(ENO_ALLOCATION_TO_RECIPIENT));
-        
-        let (global_share_price_num, global_share_price_denom) = share_price();
-
-        smart_table::for_each_mut(&mut user_allocations_mut.allocations, |_recipient, _allocation| {
-            let allocation: &mut Allocation = _allocation;
-            // assuming a constant global share price across all individual distributions
-            let distribution = internal_distribute(distributor, *_recipient, allocation, in_APT, global_share_price_num, global_share_price_denom);
-
-            // skip recipients that you have already distributed to separately
-            if (distribution.apt_amount > 0) {
-
-                let event = DistributedRewardsEvent {
-                    user: distribution.user,
-                    recipient: distribution.recipient,
-                    user_balance: distribution.user_balance,
-                    recipient_balance: distribution.recipient_balance,
-                    fees: distribution.fees,
-                    treasury_balance: distribution.treasury_balance,
-                    shares: distribution.shares,
-                    apt_amount: distribution.apt_amount,
-                    in_apt: in_APT,
-                    share_price_num: distribution.share_price_num,
-                    share_price_denom: distribution.share_price_denom,
-                    total_allocated_amount: total_allocated_amount,
-                    total_allocated_share_price_num: global_share_price_num,
-                    total_allocated_share_price_denom: global_share_price_denom
-                };
-                // emit event
-                event::emit<DistributedRewardsEvent>(event);
-            };
-        });
-
-        // emit DistributedAllEvent
-        let event = DistributedAllEvent {
-            user: distributor_addr,
-        };
-        event::emit<DistributedAllEvent>(event);
+    /// DEPRECATED in v0.0.2.
+    public entry fun distribute_all(_distributor: &signer, _in_APT: bool) {
+        abort error::invalid_state(EDEPRECATED)
     }
 
-    /// @notice Deallocates an amount of APT previously allocated to a user.
-    /// @param Deallocator wanting to deallocate previously allocated assets.
-    /// @param The address of the user whose allocation is being reduced.
-    /// @param The amount the caller wishes to reduce the recipient's allocation by.
-    public entry fun deallocate(deallocator: &signer, recipient: address, amount: u64) acquires Allocations, StakerInfo, Settings {
-        check_not_paused();
-        check_whitelist(deallocator);
-        assert!(recipient != @0x0, error::invalid_argument(EZERO_ADDRESS));
-
-        let deallocator_addr = signer::address_of(deallocator);
-        assert!(exists<Allocations>(deallocator_addr), error::invalid_argument(ENO_ALLOCATIONS));
-
-        let user_allocations_mut = borrow_global_mut<Allocations>(deallocator_addr);
-                
-        // get allocation to the recipient
-        assert!(smart_table::contains(&mut user_allocations_mut.allocations, recipient), error::invalid_argument(ENO_ALLOCATION_TO_RECIPIENT));
-        let recipient_allocation_mut = smart_table::borrow_mut(&mut user_allocations_mut.allocations, recipient);
-        
-        // check the allocated amount can be reduced by the deallocating amount
-        assert!(amount <= recipient_allocation_mut.apt_amount, error::invalid_argument(EEXCESS_DEALLOCATION));
-        
-        // check the remaining allocation is at least 1 APT
-        let remaining_allocation = recipient_allocation_mut.apt_amount - amount;
-        assert!(remaining_allocation >= ONE_APT || remaining_allocation == 0, error::invalid_argument(EALLOCATION_UNDER_ONE_APT));
-
-        let allocation_share_price_num = recipient_allocation_mut.share_price_num;
-        let allocation_share_price_denom = recipient_allocation_mut.share_price_denom;
-
-        // default values for total allocated
-        let total_allocated_amount;
-        let total_allocated_share_price_num;
-        let total_allocated_share_price_denom;
-
-        // update the allocation or remove it if it's being fully deallocated
-        if (remaining_allocation == 0) {
-            smart_table::remove(&mut user_allocations_mut.allocations, recipient);
-        } else {
-            recipient_allocation_mut.apt_amount = remaining_allocation;
-        };
-
-        (total_allocated_amount, total_allocated_share_price_num, total_allocated_share_price_denom) = total_allocated(deallocator_addr);
-
-        // emit event
-        let event = DeallocatedEvent {
-            user: deallocator_addr,
-            recipient: recipient,
-            amount: amount,
-            total_amount: remaining_allocation,
-            share_price_num: allocation_share_price_num,
-            share_price_denom: allocation_share_price_denom,
-            total_allocated_amount: total_allocated_amount,
-            total_allocated_share_price_num: total_allocated_share_price_num,
-            total_allocated_share_price_denom: total_allocated_share_price_denom
-        };
-        event::emit<DeallocatedEvent>(event);
+    /// DEPRECATED in v0.0.2.
+    public entry fun deallocate(_deallocator: &signer, _recipient: address, _amount: u64) {
+        abort error::invalid_state(EDEPRECATED)
     }
 
     /// @notice Requests to unlock a certain amount of APT from the default delegation pool.
@@ -1804,90 +1501,6 @@ module publisher::staker{
         event::emit<UnlockedEvent>(event);
     }
 
-    /// @notice Private function that distributes rewards according to the allocation made to that recipient.
-    /// @param Distributor wanting to distribute their allocated rewards.
-    /// @param Address of the recipient receiving the rewards.
-    /// @param Mutable reference to the allocation based on which distribution occurs.
-    /// @param Boolean indicating whether rewards should be distributed in APT (true) or in TruAPT (false).
-    /// @param Numerator of the current TruAPT share price.
-    /// @param Denominator of the current TruAPT share price.
-    /// @return DistributionInfo struct containing information about the distribution.
-    fun internal_distribute(
-        distributor: &signer,
-        recipient: address,
-        individual_allocation: &mut Allocation,
-        in_APT: bool,
-        global_price_num: u256,
-        global_price_denom: u256
-    ) : DistributionInfo acquires DelegationPools, StakerInfo {
-        let distributor_address = signer::address_of(distributor);
-
-        // check if there are any rewards to distribute. If not, return empty distribution object.
-        if (individual_allocation.share_price_num/individual_allocation.share_price_denom == global_price_num/global_price_denom) {
-            let distribution = DistributionInfo {
-                user: distributor_address,
-                recipient: recipient,
-                user_balance: 0,
-                recipient_balance: 0,
-                fees: 0,
-                treasury_balance: 0,
-                shares: 0,
-                apt_amount: 0,
-                in_apt: in_APT,
-                share_price_num: 0,
-                share_price_denom: 0,
-            };
-            return distribution
-        };
-
-        let staker_info = borrow_global<StakerInfo>(RESOURCE_ACCOUNT);
-        let treasury_address = staker_info.treasury;
-
-        // calculate the rewards to be distributed, nominated in TruAPT
-        let shares_to_move = (individual_allocation.apt_amount as u256) * individual_allocation.share_price_denom * SHARE_PRICE_SCALING_FACTOR / individual_allocation.share_price_num - 
-        (individual_allocation.apt_amount as u256) * global_price_denom * SHARE_PRICE_SCALING_FACTOR / global_price_num;
-        // calculate treasury distribution fees.
-        let fees = (shares_to_move * (staker_info.dist_fee as u256)) / (FEE_PRECISION as u256);
-
-        shares_to_move = shares_to_move - fees;
-
-        // transfer fees to treasury in TruAPT
-        let truAPT_metadata = staker_info.truAPT_coin;
-        if (fees > 0) primary_fungible_store::transfer(distributor, truAPT_metadata, treasury_address, (fees as u64));
-        
-        // transfer rewards to recipient (in APT or TruAPT)
-        let apt_amount = convert_to_assets((shares_to_move as u64));
-        if (in_APT) {
-            // register recipient if they don't have an account
-            if (!account::exists_at(recipient)) aptos_account::create_account(recipient);
-            coin::transfer<AptosCoin>(distributor, recipient, apt_amount);
-        } else {
-            if (!account::exists_at(recipient)) aptos_account::create_account(recipient);
-            primary_fungible_store::transfer(distributor, truAPT_metadata, recipient, (shares_to_move as u64));
-        };
-
-        // update allocation to reflect the distribution of rewards
-        individual_allocation.share_price_num = global_price_num;
-        individual_allocation.share_price_denom = global_price_denom;
-
-        let distribution = DistributionInfo {
-            user: distributor_address,
-            recipient: recipient,
-            user_balance: truAPT::balance_of(distributor_address),
-            recipient_balance: truAPT::balance_of(recipient),
-            fees: (fees as u64),
-            treasury_balance: truAPT::balance_of(treasury_address),
-            shares: (shares_to_move as u64),
-            apt_amount: apt_amount,
-            in_apt: in_APT,
-            share_price_num: global_price_num,
-            share_price_denom: global_price_denom,
-        };
-
-        return distribution
-    }
-
-
     /// @notice Private function that withdraws a previously requested and now unlocked APT amount from the staker.
     /// @param User entitled to their unlocked assets.
     /// @param Unlock nonce of the previously submitted unlock request.
@@ -2032,14 +1645,6 @@ module publisher::staker{
         return (*amount, *user, *olc, *delegation_pool)
     }
 
-    #[view]
-    #[test_only]
-    public entry fun test_allocation(allocator: address, recipient: address) : (u64, u256, u256) acquires Allocations {
-        let allocations = borrow_global<Allocations>(allocator);
-        let Allocation{apt_amount, share_price_num, share_price_denom} = smart_table::borrow(&allocations.allocations, recipient); 
-        return (*apt_amount, *share_price_num, *share_price_denom)
-    }
-
     #[test_only]
     public entry fun test_set_pool(delegation_pool: address) acquires DelegationPools {
         let pools_mut = borrow_global_mut<DelegationPools>(RESOURCE_ACCOUNT);
@@ -2092,18 +1697,6 @@ module publisher::staker{
 
     #[view]
     #[test_only]
-    public fun test_AllocationInfo(recipient: address, apt_amount: u64, share_price_num: u256, share_price_denom: u256): AllocationInfo {
-        let allocation_info = AllocationInfo{
-            recipient,
-            apt_amount,
-            share_price_num,
-            share_price_denom
-        };
-        return allocation_info
-    }
-    
-    #[view]
-    #[test_only]
     public fun test_StakerInitialisedEvent(
         name: String, 
         treasury: address,
@@ -2150,68 +1743,6 @@ module publisher::staker{
         return event
     }
 
-    #[view]
-    #[test_only]
-    public fun test_AllocatedEvent(user: address, recipient: address, amount: u64, total_amount: u64, share_price_num: u256, 
-                                   share_price_denom: u256, total_allocated_amount: u64, total_allocated_share_price_num: u256, 
-                                   total_allocated_share_price_denom: u256): AllocatedEvent {
-    
-        let event = AllocatedEvent {
-            user,
-            recipient,
-            amount,
-            total_amount,
-            share_price_num,
-            share_price_denom, 
-            total_allocated_amount,
-            total_allocated_share_price_num,
-            total_allocated_share_price_denom
-        };
-        return event
-    }
-   
-    #[view]
-    #[test_only]
-    public fun test_DistributedRewardsEvent(user: address, 
-    recipient: address, 
-    shares: u64, 
-    apt_amount: u64, 
-    fees: u64,
-    share_price_num: u256, 
-    share_price_denom: u256,
-    in_apt: bool,
-    total_allocated_amount: u64, 
-    total_allocated_share_price_num: u256, 
-    total_allocated_share_price_denom: u256): DistributedRewardsEvent acquires StakerInfo {
-        let staker_info = borrow_global<StakerInfo>(RESOURCE_ACCOUNT);
-        let event = DistributedRewardsEvent {
-            user,
-            recipient,
-            shares,
-            user_balance: truAPT::balance_of(user),
-            recipient_balance: truAPT::balance_of(recipient),
-            fees: fees,
-            treasury_balance: truAPT::balance_of(staker_info.treasury),
-            apt_amount,
-            share_price_num,
-            share_price_denom,
-            in_apt,
-            total_allocated_amount,
-            total_allocated_share_price_num,
-            total_allocated_share_price_denom
-        };
-        return event
-    }
-
-    #[view]
-    #[test_only]
-    public fun test_DistributedAllEvent(user: address): DistributedAllEvent {
-        let event = DistributedAllEvent {
-            user,
-        };
-        return event
-    }
-    
     #[view]
     #[test_only]
     public fun test_UnlockedEvent(
@@ -2318,16 +1849,6 @@ module publisher::staker{
 
     #[view]
     #[test_only]
-    public fun test_SetDistFeeEvent(old_dist_fee: u64, new_dist_fee: u64): SetDistFeeEvent {
-        let event = SetDistFeeEvent {
-            old_dist_fee,
-            new_dist_fee
-        };
-        return event
-    } 
-
-    #[view]
-    #[test_only]
     public fun test_SetMinDepositEvent(old_min_deposit: u64, new_min_deposit: u64): SetMinDepositEvent {
         let event = SetMinDepositEvent {
             old_min_deposit,
@@ -2369,27 +1890,8 @@ module publisher::staker{
             treasury_balance: truAPT::balance_of(staker_info.treasury)
         };
         return event
-    } 
-
-    #[view]
-    #[test_only]
-    public fun test_DeallocatedEvent(user: address, recipient: address, amount: u64, total_amount: u64, share_price_num: u256,
-                                     share_price_denom: u256, total_allocated_amount: u64, total_allocated_share_price_num: u256, 
-                                     total_allocated_share_price_denom: u256): DeallocatedEvent {
-        let event = DeallocatedEvent {
-            user,
-            recipient,
-            amount,
-            total_amount,
-            share_price_num,
-            share_price_denom,
-            total_allocated_amount,
-            total_allocated_share_price_num,
-            total_allocated_share_price_denom
-        };
-        return event
     }
-   
+
     #[view]
     #[test_only]
     public fun test_FeesCollectedEvent(shares_minted: u64, share_price_num: u256, share_price_denom: u256): FeesCollectedEvent
