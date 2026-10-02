@@ -428,6 +428,15 @@ module publisher::staker{
         treasury_balance: u64
     }
 
+    #[event]
+    /// @notice Emitted when the solvency cap reduces a residual-rewards collection.
+    /// @param Residual rewards calculated before applying the cap.
+    /// @param Residual rewards transferred after applying the cap.
+    struct ResidualRewardsCappedEvent has drop, store {
+        raw_amount: u64,
+        capped_amount: u64
+    }
+
     // *** PUBLIC FUNCTIONS ***
     // *** PUBLIC VIEW FUNCTIONS ***
     
@@ -636,12 +645,19 @@ module publisher::staker{
 
         let pools: vector<address> = vector::empty();
 
+        // every APT amount still owed to users, whether or not it is currently ready to withdraw
+        let total_outstanding = 0;
+        // the staker's APT plus the stake it can still recover from the pools
+        let recoverable = coin::balance<AptosCoin>(RESOURCE_ACCOUNT);
+
         smart_table::for_each_ref(&unlocks.unlocks, |_nonce, _request| {
             let request: &UnlockRequest = _request;
-            
+
+            total_outstanding = total_outstanding + request.amount;
+
             // synchronize state with delegation pool (and underlying stake pool) to ensure the olc is up to date
             delegation_pool::synchronize_delegation_pool(request.delegation_pool);
-            
+
             // if the unlocked amount is ready for withdrawal AND residual_rewards have not been deducted from it
             if (ready_to_withdraw(request.olc, request.delegation_pool) && !request.residual_rewards_collected) {
                 // add the claimable amount to the total unlocked amount awaiting payout
@@ -653,9 +669,11 @@ module publisher::staker{
             
                 let (_, inactive, pending_inactive) = delegation_pool::get_stake(request.delegation_pool, RESOURCE_ACCOUNT);
 
+                recoverable = recoverable + inactive + pending_inactive;
+
                 // if the delegation pool is inactive
                 if (delegation_pool::can_withdraw_pending_inactive(request.delegation_pool)) {
-                    
+
                     // add the pending_inactive amount to the amount received by staker
                     unlocked_amount_received = unlocked_amount_received + pending_inactive;
                 };
@@ -664,11 +682,16 @@ module publisher::staker{
             };
 
         });
-        // residual rewards is the total unlocked amount received by the staker (unlocked_amount_received) during the 
+        // residual rewards is the total unlocked amount received by the staker (unlocked_amount_received) during the
         // unlock period minus the amount users are entitled to withdraw (unlocks_awaiting_payout + unlocks_paid).
         let residual_rewards = 0;
         if (unlocked_amount_received > (unlocks_paid + unlocks_awaiting_payout)) residual_rewards = unlocked_amount_received - (unlocks_paid + unlocks_awaiting_payout);
-       
+
+        // apply the same solvency cap as collect_residual_rewards, so the previewed amount matches what
+        // collection would actually transfer
+        let max_collectable = max_collectable_residual_rewards(recoverable, total_outstanding);
+        if (residual_rewards > max_collectable) residual_rewards = max_collectable;
+
         return residual_rewards
     }
 
@@ -1068,12 +1091,22 @@ module publisher::staker{
         // cumulative APT amount that has been unlocked and is ready for pending withdrawal by users
         let unlocks_awaiting_payout = 0;
 
+        // every APT amount still owed to users, whether or not it is currently ready to withdraw
+        let total_outstanding = 0;
+        // the pools touched by outstanding unlock requests, used to value the stake still held in pools
+        let touched_pools: vector<address> = vector::empty();
+
         smart_table::for_each_mut(&mut unlocks_mut.unlocks, |_nonce, _request| {
             let request: &mut UnlockRequest = _request;
 
+            total_outstanding = total_outstanding + request.amount;
+            if (!vector::contains(&touched_pools, &request.delegation_pool)) {
+                vector::push_back(&mut touched_pools, request.delegation_pool);
+            };
+
             // synchronize state with delegation pool (and underlying stake pool) state to ensure the olc is up to date
             delegation_pool::synchronize_delegation_pool(request.delegation_pool);
-            
+
             // if the unlocked amount is ready for withdrawal AND residual_rewards have not yet been deducted from it
             if (ready_to_withdraw(request.olc, request.delegation_pool) && !request.residual_rewards_collected) {
                 // add amount to unlocked amount awaiting payout
@@ -1102,8 +1135,28 @@ module publisher::staker{
         // the unlock period minus the unlocked amount that belongs to the users (unlocks_awaiting_payout + unlocks_paid)
         let residual_rewards = 0;
         if (unlocked_amount_received > (unlocks_paid + unlocks_awaiting_payout)) residual_rewards = unlocked_amount_received - (unlocks_paid + unlocks_awaiting_payout);
+        let raw_residual_rewards = residual_rewards;
 
-        
+        // Solvency cap. `ready_to_withdraw` is not monotonic: a request funded into the staker while its
+        // pool's validator was out of the validator set stops being ready once that validator rejoins, so it
+        // drops out of `unlocks_awaiting_payout` and its principal would otherwise be paid out as residual
+        // rewards. Never send the treasury more than what the staker holds, plus the stake it can still
+        // recover from the pools, in excess of everything it owes to outstanding unlock requests.
+        let recoverable = coin::balance<AptosCoin>(RESOURCE_ACCOUNT);
+        vector::for_each(touched_pools, |pool_address| {
+            let (_, inactive, pending_inactive) = delegation_pool::get_stake(pool_address, RESOURCE_ACCOUNT);
+            recoverable = recoverable + inactive + pending_inactive;
+        });
+        let max_collectable = max_collectable_residual_rewards(recoverable, total_outstanding);
+        if (residual_rewards > max_collectable) residual_rewards = max_collectable;
+
+        if (raw_residual_rewards > residual_rewards) {
+            event::emit<ResidualRewardsCappedEvent>(ResidualRewardsCappedEvent {
+                raw_amount: raw_residual_rewards,
+                capped_amount: residual_rewards
+            });
+        };
+
         if (residual_rewards > 0) {
             let (share_price_num, share_price_denom) = share_price();
             let staker_info = borrow_global<StakerInfo>(RESOURCE_ACCOUNT);
@@ -1338,6 +1391,17 @@ module publisher::staker{
     fun ready_to_withdraw(olc: u64, pool_address: address) : bool {
         return (olc < delegation_pool::observed_lockup_cycle(pool_address)) || 
         delegation_pool::can_withdraw_pending_inactive(pool_address)
+    }
+
+    /// @notice Calculates treasury headroom while retaining the staker's operational reserve.
+    fun max_collectable_residual_rewards(recoverable: u64, total_outstanding: u64): u64 {
+        let recoverable_excluding_reserve =
+            if (recoverable > ONE_APT) recoverable - ONE_APT else 0;
+        return if (recoverable_excluding_reserve > total_outstanding) {
+            recoverable_excluding_reserve - total_outstanding
+        } else {
+            0
+        }
     }
 
     /// @notice Private function to transfer the APT amount approved by the caller and stake it to the relevant delegation pool.
@@ -1890,6 +1954,18 @@ module publisher::staker{
             treasury_balance: truAPT::balance_of(staker_info.treasury)
         };
         return event
+    }
+
+    #[view]
+    #[test_only]
+    public fun test_ResidualRewardsCappedEvent(
+        raw_amount: u64,
+        capped_amount: u64
+    ): ResidualRewardsCappedEvent {
+        return ResidualRewardsCappedEvent {
+            raw_amount,
+            capped_amount
+        }
     }
 
     #[view]

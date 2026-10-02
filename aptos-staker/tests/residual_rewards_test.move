@@ -1078,4 +1078,277 @@ module publisher::residual_rewards_test{
         let expected_event = staker::test_ResidualRewardsCollectedEvent(rewards);
         assert!(event::was_event_emitted(&expected_event), 0);
     }
+
+
+
+    // Alice and Bob both unlock while validator_2 is out of the set with an expired lockup.
+    // Alice withdraws, which sweeps the staker's entire pending_inactive position on that pool
+    // (Alice's AND Bob's principal) into the staker account. The validator then rejoins, so Bob's
+    // request stops being ready_to_withdraw and drops out of unlocks_awaiting_payout while his
+    // principal is already held by the staker. Collection must not treat that principal as reward.
+    #[test(alice=@0xE0A1, bob=@0xE0B2, admin=@default_admin, aptos_framework=@0x1,
+    resource_account=@publisher, src=@src_account, treasury=@0x122, validator_1=@0xDEA3,
+    validator_2=@0xDFA1, whitelist=@whitelist)]
+    public entry fun test_residual_rewards_exclude_pending_unlock_after_validator_rejoins(
+        alice: &signer,
+        bob: &signer,
+        admin: &signer,
+        aptos_framework: &signer,
+        resource_account: &signer,
+        src: &signer,
+        treasury: &signer,
+        validator_1: &signer,
+        validator_2: &signer,
+        whitelist: &signer
+    ) {
+        setup_test_staker::setup_with_delegation_pool(aptos_framework, admin, resource_account, src, validator_1);
+
+        let pool_2 = setup_test_delegation_pool::create_delegation_pool(
+            validator_2,
+            100 * constants::one_apt(),
+            true,
+            true,
+            0
+        );
+        staker::add_pool(admin, pool_2);
+
+        let deposit_amount = 1_000 * constants::one_apt();
+        account_setup::setup_account_and_mint_APT(aptos_framework, alice, deposit_amount);
+        account_setup::setup_account_and_mint_APT(aptos_framework, bob, deposit_amount);
+        account_setup::setup_account_and_mint_APT(aptos_framework, treasury, 1 * constants::one_apt());
+        account_setup::setup_whitelist(whitelist, vector<address>[signer::address_of(alice), signer::address_of(bob)]);
+
+        initial_deposit(aptos_framework, whitelist, pool_2);
+
+        staker::stake_to_specific_pool(alice, deposit_amount, pool_2);
+        staker::stake_to_specific_pool(bob, deposit_amount, pool_2);
+        delegation_pool::end_aptos_epoch();
+
+        // validator_2 leaves the set and its lockup expires -> can_withdraw_pending_inactive == true
+        stake::leave_validator_set(validator_2, pool_2);
+        delegation_pool::end_aptos_epoch();
+        assert!(stake::get_validator_state(pool_2) == constants::inactive_validator_status(), 100);
+        time::move_olc_and_epoch_forward();
+        assert!(delegation_pool::can_withdraw_pending_inactive(pool_2), 101);
+
+        // both users unlock during the out-of-set window
+        let alice_amount = 500 * constants::one_apt();
+        staker::unlock_from_specific_pool(alice, alice_amount, pool_2);
+        let alice_nonce = staker::latest_unlock_nonce();
+
+        let bob_amount = 500 * constants::one_apt();
+        staker::unlock_from_specific_pool(bob, bob_amount, pool_2);
+        let bob_nonce = staker::latest_unlock_nonce();
+
+        assert!(staker::is_claimable(alice_nonce), 102);
+        assert!(staker::is_claimable(bob_nonce), 103);
+
+        // The staker holds permanently-staked active APT well above MIN_COINS_ON_SHARES_POOL: the
+        // 11 APT initial_deposit that is never unlocked, plus the validator's own stake. That floor
+        // is on the active shares pool and does nothing to limit the pending_inactive sweep below.
+        let (active_before, _, pending_inactive_before) = delegation_pool::get_stake(pool_2, signer::address_of(resource_account));
+        assert!(active_before >= 10 * constants::one_apt(), 200);
+        // the pool's share math can round each unlock down by up to 2 octas (see EINVALID_UNSTAKED_AMOUNT)
+        assert!(pending_inactive_before + 4 >= alice_amount + bob_amount, 201);
+
+        // Alice withdraws: this sweeps the staker's whole pending_inactive position, Bob's included
+        staker::withdraw(alice, alice_nonce);
+
+        // the active floor is untouched, yet every user's pending unlock has been swept out
+        let (active_after, _, pending_inactive_after) = delegation_pool::get_stake(pool_2, signer::address_of(resource_account));
+        assert!(active_after == active_before, 202);
+        assert!(pending_inactive_after == 0, 203);
+
+        // Bob's money is already sitting in the staker account
+        let staker_balance_after_alice = coin::balance<AptosCoin>(signer::address_of(resource_account));
+        assert!(staker_balance_after_alice >= bob_amount, 104);
+
+        // validator_2 rejoins -> Bob's request silently stops being ready_to_withdraw
+        stake::join_validator_set(validator_2, pool_2);
+        delegation_pool::end_aptos_epoch();
+        assert!(!staker::is_claimable(bob_nonce), 105);
+
+        let preview = staker::preview_residual_rewards();
+        let treasury_before = coin::balance<AptosCoin>(signer::address_of(treasury));
+        let staker_balance_before_collect = coin::balance<AptosCoin>(signer::address_of(resource_account));
+        let (_, pool_inactive, pool_pending_inactive) =
+            delegation_pool::get_stake(pool_2, signer::address_of(resource_account));
+        let gross_recoverable =
+            staker_balance_before_collect + pool_inactive + pool_pending_inactive;
+        let recoverable_excluding_reserve =
+            if (gross_recoverable > constants::one_apt()) {
+                gross_recoverable - constants::one_apt()
+            } else {
+                0
+            };
+        let expected_gain =
+            if (recoverable_excluding_reserve > bob_amount) {
+                recoverable_excluding_reserve - bob_amount
+            } else {
+                0
+            };
+        let expected_raw_gain = pending_inactive_before - alice_amount;
+
+        staker::collect_residual_rewards(admin);
+        let treasury_gain = coin::balance<AptosCoin>(signer::address_of(treasury)) - treasury_before;
+        let staker_balance_after_collect = coin::balance<AptosCoin>(signer::address_of(resource_account));
+
+        // the preview the admin sees must match what collection actually transfers
+        assert!(preview == treasury_gain, 204);
+
+        // the treasury receives exactly the capped headroom, excluding Bob's principal and the reserve
+        assert!(treasury_gain == expected_gain, 205);
+
+        // The staker must still be able to pay Bob and retain its rounding reserve. The reserve
+        // may already be short by up to two octas for each of Alice's and Bob's unlocks.
+        assert!(
+            staker_balance_after_collect >= bob_amount + constants::one_apt() - 4,
+            999
+        );
+
+        let expected_cap_event =
+            staker::test_ResidualRewardsCappedEvent(expected_raw_gain, expected_gain);
+        assert!(event::was_event_emitted(&expected_cap_event), 206);
+    }
+
+    // Same as above, but instead of asserting solvency we let Bob's request mature and withdraw.
+    // Before the solvency cap this aborted with coin::EINSUFFICIENT_BALANCE (65542) at the
+    // coin::transfer in internal_withdraw, because the treasury had taken Bob's principal.
+    #[test(alice=@0xE0A1, bob=@0xE0B2, admin=@default_admin, aptos_framework=@0x1,
+    resource_account=@publisher, src=@src_account, treasury=@0x122, validator_1=@0xDEA3,
+    validator_2=@0xDFA1, whitelist=@whitelist)]
+    public entry fun test_withdraw_succeeds_after_residual_rewards_collected_post_rejoin(
+        alice: &signer,
+        bob: &signer,
+        admin: &signer,
+        aptos_framework: &signer,
+        resource_account: &signer,
+        src: &signer,
+        treasury: &signer,
+        validator_1: &signer,
+        validator_2: &signer,
+        whitelist: &signer
+    ) {
+        setup_test_staker::setup_with_delegation_pool(aptos_framework, admin, resource_account, src, validator_1);
+
+        let pool_2 = setup_test_delegation_pool::create_delegation_pool(
+            validator_2,
+            100 * constants::one_apt(),
+            true,
+            true,
+            0
+        );
+        staker::add_pool(admin, pool_2);
+
+        let deposit_amount = 1_000 * constants::one_apt();
+        account_setup::setup_account_and_mint_APT(aptos_framework, alice, deposit_amount);
+        account_setup::setup_account_and_mint_APT(aptos_framework, bob, deposit_amount);
+        account_setup::setup_account_and_mint_APT(aptos_framework, treasury, 1 * constants::one_apt());
+        account_setup::setup_whitelist(whitelist, vector<address>[signer::address_of(alice), signer::address_of(bob)]);
+
+        initial_deposit(aptos_framework, whitelist, pool_2);
+
+        staker::stake_to_specific_pool(alice, deposit_amount, pool_2);
+        staker::stake_to_specific_pool(bob, deposit_amount, pool_2);
+        delegation_pool::end_aptos_epoch();
+
+        stake::leave_validator_set(validator_2, pool_2);
+        delegation_pool::end_aptos_epoch();
+        time::move_olc_and_epoch_forward();
+
+        staker::unlock_from_specific_pool(alice, 500 * constants::one_apt(), pool_2);
+        let alice_nonce = staker::latest_unlock_nonce();
+        staker::unlock_from_specific_pool(bob, 500 * constants::one_apt(), pool_2);
+        let bob_nonce = staker::latest_unlock_nonce();
+
+        staker::withdraw(alice, alice_nonce);
+
+        stake::join_validator_set(validator_2, pool_2);
+        delegation_pool::end_aptos_epoch();
+
+        staker::collect_residual_rewards(admin);
+
+        // Alice unlocks her remaining stake, creating pending_inactive so the OLC can advance
+        // and Bob's request finally matures.
+        staker::unlock_from_specific_pool(alice, 400 * constants::one_apt(), pool_2);
+        let alice_nonce_2 = staker::latest_unlock_nonce();
+        time::move_olc_and_epoch_forward();
+        time::move_olc_and_epoch_forward();
+        delegation_pool::synchronize_delegation_pool(pool_2);
+        assert!(staker::is_claimable(bob_nonce), 106);
+
+        let bob_before = coin::balance<AptosCoin>(signer::address_of(bob));
+        staker::withdraw(bob, bob_nonce);
+        assert!(coin::balance<AptosCoin>(signer::address_of(bob)) == bob_before + 500 * constants::one_apt(), 107);
+
+        // and Alice's later request is still payable too
+        assert!(staker::is_claimable(alice_nonce_2), 108);
+        staker::withdraw(alice, alice_nonce_2);
+    }
+
+    // Control: identical to the test above except validator_2 never rejoins.
+    #[test(alice=@0xE0A1, bob=@0xE0B2, admin=@default_admin, aptos_framework=@0x1,
+    resource_account=@publisher, src=@src_account, treasury=@0x122, validator_1=@0xDEA3,
+    validator_2=@0xDFA1, whitelist=@whitelist)]
+    public entry fun test_residual_rewards_when_validator_does_not_rejoin(
+        alice: &signer,
+        bob: &signer,
+        admin: &signer,
+        aptos_framework: &signer,
+        resource_account: &signer,
+        src: &signer,
+        treasury: &signer,
+        validator_1: &signer,
+        validator_2: &signer,
+        whitelist: &signer
+    ) {
+        setup_test_staker::setup_with_delegation_pool(aptos_framework, admin, resource_account, src, validator_1);
+
+        let pool_2 = setup_test_delegation_pool::create_delegation_pool(
+            validator_2,
+            100 * constants::one_apt(),
+            true,
+            true,
+            0
+        );
+        staker::add_pool(admin, pool_2);
+
+        let deposit_amount = 1_000 * constants::one_apt();
+        account_setup::setup_account_and_mint_APT(aptos_framework, alice, deposit_amount);
+        account_setup::setup_account_and_mint_APT(aptos_framework, bob, deposit_amount);
+        account_setup::setup_account_and_mint_APT(aptos_framework, treasury, 1 * constants::one_apt());
+        account_setup::setup_whitelist(whitelist, vector<address>[signer::address_of(alice), signer::address_of(bob)]);
+
+        initial_deposit(aptos_framework, whitelist, pool_2);
+
+        staker::stake_to_specific_pool(alice, deposit_amount, pool_2);
+        staker::stake_to_specific_pool(bob, deposit_amount, pool_2);
+        delegation_pool::end_aptos_epoch();
+
+        stake::leave_validator_set(validator_2, pool_2);
+        delegation_pool::end_aptos_epoch();
+        time::move_olc_and_epoch_forward();
+
+        let alice_amount = 500 * constants::one_apt();
+        staker::unlock_from_specific_pool(alice, alice_amount, pool_2);
+        let alice_nonce = staker::latest_unlock_nonce();
+
+        let bob_amount = 500 * constants::one_apt();
+        staker::unlock_from_specific_pool(bob, bob_amount, pool_2);
+        let bob_nonce = staker::latest_unlock_nonce();
+
+        staker::withdraw(alice, alice_nonce);
+
+        // no rejoin here, so Bob's request stays ready and is counted as an obligation
+        assert!(staker::is_claimable(bob_nonce), 105);
+        assert!(staker::preview_residual_rewards() == 0, 106);
+
+        staker::collect_residual_rewards(admin);
+        let staker_balance_after_collect = coin::balance<AptosCoin>(signer::address_of(resource_account));
+
+        assert!(staker_balance_after_collect >= bob_amount, 999);
+
+        // and Bob can actually withdraw
+        staker::withdraw(bob, bob_nonce);
+    }
 }
